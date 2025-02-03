@@ -138,9 +138,6 @@ class LaboratoryWorkflow:
         os.mkdir(os.path.join("./research_dir", "src"))
         os.mkdir(os.path.join("./research_dir", "tex"))
 
-    ########################################################
-    #               CORE RESEARCH METHOD                   #
-    ########################################################
     def perform_research(self):
         """
         Loop through all research phases/subtasks and perform them in order.
@@ -171,6 +168,7 @@ class LaboratoryWorkflow:
                 # Dispatch to the subtask method if not already done
                 if not self.phase_status.get(subtask, False):
                     repeat = False
+
                     if subtask == "literature review":
                         repeat = True
                         while repeat:
@@ -240,10 +238,6 @@ class LaboratoryWorkflow:
                     phase_duration = phase_end_time - phase_start_time
                     print(f"Subtask '{subtask}' completed in {phase_duration:.2f} seconds.")
                     self.statistics_per_phase[subtask]["time"] = phase_duration
-
-    ########################################################
-    #              INDIVIDUAL SUBTASK METHODS              #
-    ########################################################
 
     def literature_review(self):
         """
@@ -650,9 +644,9 @@ class LaboratoryWorkflow:
 
             raise Exception("Model did not respond with y/n in report_refinement()")
 
-    ########################################################
-    #                    HELPER METHODS                    #
-    ########################################################
+    # ----------------------------------------------------------
+    #                      HELPER METHODS
+    # ----------------------------------------------------------
 
     def set_model(self, model):
         """ Set agent models (except ReviewersAgent which is separate). """
@@ -865,7 +859,6 @@ if __name__ == "__main__":
         "report refinement":      human_mode,
     }
 
-    # Removed "paper refinement" key (dead code) and replaced with "report refinement".
     agent_models = {
         "literature review":      llm_backend,
         "plan formulation":       llm_backend,
