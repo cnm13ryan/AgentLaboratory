@@ -4,6 +4,70 @@ from inference import *
 import re
 import json
 
+# ----------------------------------------------------------------------
+# Helper to build a "reviewer system prompt" (used in get_score).
+def _build_reviewer_system_prompt(reviewer_type=""):
+    template_instructions = """
+    Respond in the following format:
+
+    THOUGHT:
+    <THOUGHT>
+
+    REVIEW JSON:
+    ```json
+    <JSON>
+    ```
+
+    In <THOUGHT>, first briefly discuss your intuitions and reasoning for the evaluation.
+    In <JSON>, provide the review in JSON format with the following fields in the order:
+    - "Summary"
+    - "Strengths"
+    - "Weaknesses"
+    - "Originality"
+    - "Quality"
+    - "Clarity"
+    - "Significance"
+    - "Questions"
+    - "Limitations"
+    - "Ethical Concerns"
+    - "Soundness"
+    - "Presentation"
+    - "Contribution"
+    - "Overall"
+    - "Confidence"
+    - "Decision"
+
+    Decision must be only "Accept" or "Reject".
+    """
+
+    neurips_form = (
+        """
+        ## Review Form
+        (NeurIPS style questions and guidelines)
+        
+        1. Summary, Strengths, Weaknesses
+        2. Questions
+        3. Limitations
+        4. Ethical concerns
+        5. Soundness (1-4)
+        6. Presentation (1-4)
+        7. Contribution (1-4)
+        8. Overall (1-10)
+        9. Confidence (1-5)
+        
+        You must make sure that all sections are properly created.
+        """
+        + template_instructions
+    )
+    base_str = (
+        "You are an AI researcher who is reviewing a paper that was submitted "
+        "to a prestigious ML venue. Be critical and cautious."
+    )
+    # reviewer_type is appended to clarify the style or tone.
+    return f"{base_str} {reviewer_type}\n{neurips_form}"
+
+# ----------------------------------------------------------------------
+# JSON extraction helper
 def extract_json_between_markers(llm_output):
     """
     Attempt to extract valid JSON from the string between ```json ... ``` markers.
@@ -45,7 +109,8 @@ def extract_json_between_markers(llm_output):
     # No valid JSON found
     return None
 
-
+# ----------------------------------------------------------------------
+# Score function that uses a reward model LLM
 def get_score(
     outlined_plan, 
     latex, 
@@ -57,7 +122,7 @@ def get_score(
     """
     Given a plan (outlined_plan) and associated LaTeX (latex),
     use a reward model LLM (reward_model_llm) to generate a review,
-    parse it into JSON, and derive a performance score from fields in the review.
+    parse it into JSON, and derive a performance score.
     """
     # -------------------------------------------------------------------------
     # Guard clauses for any critical missing input:
@@ -74,68 +139,14 @@ def get_score(
     e = ""
     for _attempt in range(attempts):
         try:
-            # Template inherited from the AI Scientist
-            template_instructions = """
-            Respond in the following format:
-
-            THOUGHT:
-            <THOUGHT>
-
-            REVIEW JSON:
-            ```json
-            <JSON>
-            ```
-
-            In <THOUGHT>, first briefly discuss your intuitions and reasoning for the evaluation.
-            In <JSON>, provide the review in JSON format with the following fields in the order:
-            - "Summary"
-            - "Strengths"
-            - "Weaknesses"
-            - "Originality"
-            - "Quality"
-            - "Clarity"
-            - "Significance"
-            - "Questions"
-            - "Limitations"
-            - "Ethical Concerns"
-            - "Soundness"
-            - "Presentation"
-            - "Contribution"
-            - "Overall"
-            - "Confidence"
-            - "Decision"
-
-            Decision must be only "Accept" or "Reject".
-            """
-
-            neurips_form = (
-                """
-                ## Review Form
-                (NeurIPS style questions and guidelines)
-                
-                1. Summary, Strengths, Weaknesses
-                2. Questions
-                3. Limitations
-                4. Ethical concerns
-                5. Soundness (1-4)
-                6. Presentation (1-4)
-                7. Contribution (1-4)
-                8. Overall (1-10)
-                9. Confidence (1-5)
-                
-                You must make sure that all sections are properly created.
-                """ 
-                + template_instructions
-            )
-
             if reviewer_type is None:
                 reviewer_type = ""
 
-            sys = (
-                "You are an AI researcher who is reviewing a paper that was submitted "
-                f"to a prestigious ML venue. Be critical and cautious. {reviewer_type}\n"
-            ) + neurips_form
+            # Build the system prompt using our new helper
+            sys = _build_reviewer_system_prompt(reviewer_type)
 
+            # -----------------------------------------------------------------
+            # Query the model
             scoring = query_model(
                 model_str=reward_model_llm,
                 system_prompt=sys,
@@ -221,7 +232,8 @@ def get_score(
     # If all attempts failed, return last known exception
     return 0.0, e, False
 
-
+# ----------------------------------------------------------------------
+# BaseAgent with extracted helper methods for building system/user prompts
 class BaseAgent:
     """
     A foundational agent with shared properties/methods for specialized roles.
@@ -234,25 +246,16 @@ class BaseAgent:
         max_steps=100, 
         openai_api_key=None
     ):
-        # ---------------------------------------------------------------------
-        # Guard clauses:
         if model is None:
             raise ValueError("model must be specified (string).")
         if max_steps <= 0:
             raise ValueError("max_steps should be > 0.")
 
-        # ---------------------------------------------------------------------
-        # Initialize instance variables
-        if notes is None:
-            self.notes = []
-        else:
-            self.notes = notes
-
+        self.notes = notes if notes else []
         self.max_steps = max_steps
         self.model = model
         self.openai_api_key = openai_api_key
 
-        # ---------------------------------------------------------------------
         # Internal states
         self.phases = []
         self.plan = ""
@@ -275,9 +278,6 @@ class BaseAgent:
         self.max_hist_len = 15
 
     def set_model_backbone(self, model):
-        """
-        Update the model attribute for this agent.
-        """
         if not model:
             raise ValueError("model cannot be empty.")
         self.model = model
@@ -291,6 +291,58 @@ class BaseAgent:
             return ""
         return text.replace("```\n", "```")
 
+    def build_system_prompt(self, phase):
+        """
+        Helper that composes the system prompt from:
+          1) role description
+          2) phase prompt
+          3) command descriptions
+        """
+        return (
+            f"You are {self.role_description()}.\n"
+            f"Task instructions: {self.phase_prompt(phase)}\n"
+            f"{self.command_descriptions(phase)}"
+        )
+
+    def build_user_prompt(self, research_topic, phase, step, feedback):
+        """
+        Helper to build the user prompt portion (context, history, feedback, etc.).
+        """
+        # Guard clauses:
+        if not research_topic:
+            return "No research topic provided."
+        if not phase:
+            return "No phase provided."
+        if step < 0:
+            return "Step cannot be negative."
+
+        # Create context for the given phase
+        context_str = self.context(phase)
+
+        # Convert history to a single string
+        history_str = "\n".join([h[1] for h in self.history])
+
+        # Possibly instruct to finish if near the end
+        complete_str = ""
+        if step / (self.max_steps - 1) > 0.7:
+            complete_str = "You must finish this task and submit as soon as possible!"
+
+        # Possibly parse special feedback
+        # (Example for expiration steps, if present in feedback)
+        # Not strictly needed unless you want to unify that logic
+        # for every agent. We'll keep it here for demonstration.
+        prompt = (
+            f"{context_str}\n"
+            f"{'~' * 10}\nHistory: {history_str}\n{'~' * 10}\n"
+            f"Current Step #{step}, Phase: {phase}\n{complete_str}\n"
+            f"[Objective] Your goal is to perform research on the following topic: {research_topic}\n"
+            f"Feedback: {feedback}\n"
+            f"Notes: {[n for n in self.notes if phase in n.get('phases', [])]}\n"
+            f"Your previous command was: {self.prev_comm}.\n"
+            f"Please produce a single command below:\n"
+        )
+        return prompt
+
     def inference(
         self, 
         research_topic, 
@@ -301,77 +353,41 @@ class BaseAgent:
     ):
         """
         Main inference loop for the agent, generating a system prompt
-        and a final request to the underlying LLM (via `query_model`).
+        (via build_system_prompt) and a user prompt (via build_user_prompt),
+        then querying the underlying LLM with query_model().
         """
-        # ---------------------------------------------------------------------
-        # Guard clauses:
-        if not research_topic:
-            return "No research topic provided."
-        if not phase:
-            return "No phase provided."
-        if step < 0:
-            return "Step cannot be negative."
-
-        # ---------------------------------------------------------------------
         # Build system prompt
-        sys_prompt = (
-            f"You are {self.role_description()} \n"
-            f"Task instructions: {self.phase_prompt(phase)}\n"
-            f"{self.command_descriptions(phase)}"
+        sys_prompt = self.build_system_prompt(phase)
+        # Build user prompt
+        user_prompt = self.build_user_prompt(research_topic, phase, step, feedback)
+
+        # Query the LLM
+        model_resp = query_model(
+            model_str=self.model,
+            system_prompt=sys_prompt,
+            prompt=user_prompt,
+            temp=temp,
+            openai_api_key=self.openai_api_key
         )
 
-        # ---------------------------------------------------------------------
-        # Build user prompt
-        context = self.context(phase)
-        history_str = "\n".join([h[1] for h in self.history])
+        # Clean and store response
+        model_resp = self.clean_text(model_resp)
+        self.prev_comm = model_resp
 
-        # If near the end, instruct to finish
-        complete_str = ""
-        if step / (self.max_steps - 1) > 0.7:
-            complete_str = "You must finish this task and submit as soon as possible!"
-
-        # Possibly parse special feedback
+        # Keep history (including a possible ephemeral expiration)
         steps_exp = None
         if feedback and "```EXPIRATION" in feedback:
             try:
                 steps_exp_line = feedback.split("\n")[0]
                 steps_exp = int(steps_exp_line.replace("```EXPIRATION ", ""))
-                feedback = extract_prompt(feedback, "EXPIRATION")
             except ValueError:
-                pass
+                steps_exp = None
 
-        prompt = (
-            f"{context}\n"
-            f"{'~' * 10}\nHistory: {history_str}\n{'~' * 10}\n"
-            f"Current Step #{step}, Phase: {phase}\n{complete_str}\n"
-            f"[Objective] Your goal is to perform research on the following topic: {research_topic}\n"
-            f"Feedback: {feedback}\n"
-            f"Notes: {[n for n in self.notes if phase in n.get('phases', [])]}\n"
-            f"Your previous command was: {self.prev_comm}.\n"
-            f"Please produce a single command below:\n"
-        )
-
-        # ---------------------------------------------------------------------
-        # Query the LLM
-        model_resp = query_model(
-            model_str=self.model,
-            system_prompt=sys_prompt,
-            prompt=prompt,
-            temp=temp,
-            openai_api_key=self.openai_api_key
-        )
-
-        # ---------------------------------------------------------------------
-        # Clean and store response
-        model_resp = self.clean_text(model_resp)
-        self.prev_comm = model_resp
-
-        # Keep history
         self.history.append(
             (steps_exp, f"Step #{step}, Phase: {phase}, Feedback: {feedback}, Your response: {model_resp}")
         )
 
-        # Cleanup expired history
+        # Decrement expiration counters & remove expired
         for i in reversed(range(len(self.history))):
             if self.history[i][0] is not None:
                 new_exp = self.history[i][0] - 1
@@ -392,6 +408,9 @@ class BaseAgent:
         self.history.clear()
         self.prev_comm = ""
 
+    # -------------------------------------------------------------------------
+    # Abstract methods to be implemented by subclasses:
+
     def context(self, phase):
         raise NotImplementedError("Subclasses should implement 'context(phase)'.")
 
@@ -406,8 +425,10 @@ class BaseAgent:
 
     def example_command(self, phase):
         raise NotImplementedError("Subclasses should implement 'example_command(phase)'.")
-    
 
+
+# ----------------------------------------------------------------------
+# Specialized Agents
 class PhDStudentAgent(BaseAgent):
     """
     A specialized agent that acts as a PhD student, focusing on:
@@ -427,7 +448,6 @@ class PhDStudentAgent(BaseAgent):
     ):
         super().__init__(model, notes, max_steps, openai_api_key)
 
-        # ---------------------------------------------------------------------
         # PhD phases
         self.phases = [
             "literature review",
@@ -440,9 +460,6 @@ class PhDStudentAgent(BaseAgent):
         self.lit_review = []
 
     def context(self, phase):
-        """
-        Provides relevant context for each phase.
-        """
         sr_str = ""
         if self.second_round:
             sr_str = (
@@ -454,7 +471,6 @@ class PhDStudentAgent(BaseAgent):
                 f"{self.reviewer_response}\n\n\n"
             )
 
-        # ---------------------------------------------------------------------
         if phase == "plan formulation":
             return (
                 sr_str
@@ -491,9 +507,6 @@ class PhDStudentAgent(BaseAgent):
             return ""
 
     def phase_prompt(self, phase):
-        """
-        Provides a specialized "role + guidance" for each phase.
-        """
         if phase not in self.phases:
             raise Exception(f"Invalid phase: {phase}")
 
@@ -543,9 +556,6 @@ class PhDStudentAgent(BaseAgent):
         return "a computer science PhD student at a top university."
 
     def command_descriptions(self, phase):
-        """
-        Explains the available commands in each phase.
-        """
         if phase not in self.phases:
             raise Exception(f"Invalid phase: {phase}")
 
@@ -564,13 +574,13 @@ class PhDStudentAgent(BaseAgent):
             )
         elif phase == "data preparation":
             return (
-                "Use: ```DIALOGUE\nsome text\n```\n to discuss code with the ML engineer.\n"
+                "Use: ```DIALOGUE\nsome text\n``` to discuss code with the ML engineer.\n"
                 "When finalizing, use: ```SUBMIT_CODE\nactual code\n```\n"
                 "One command per turn, only. The code must be simple and rely on HF dataset."
             )
         elif phase == "results interpretation":
             return (
-                "Use: ```DIALOGUE\nsome text\n```\n to talk with a postdoc.\n"
+                "Use: ```DIALOGUE\nsome text\n``` to talk with a postdoc.\n"
                 "One command per turn."
             )
         elif phase == "report refinement":
@@ -579,15 +589,12 @@ class PhDStudentAgent(BaseAgent):
             )
         elif phase == "report writing":
             return (
-                "You can produce dialogue to discuss the writing with your professor. In some frameworks, you might finalize the LaTeX with a command like ```LATEX\nfull report\n```."
+                "You can produce dialogue to discuss the writing with your professor. "
+                "In some frameworks, you might finalize the LaTeX with a command like ```LATEX\nfull report\n```."
             )
-
         return ""
 
     def example_command(self, phase):
-        """
-        Example commands for demonstration.
-        """
         if phase not in self.phases:
             raise Exception(f"Invalid phase: {phase}")
         return ()
@@ -778,7 +785,7 @@ class MLEngineerAgent(BaseAgent):
             return (
                 sr_str
                 + f"Current Literature Review: {self.lit_review_sum}\n"
-                + f"Plan: {self.plan}"
+                + f"Current Plan: {self.plan}"
             )
         elif phase == "running experiments":
             return (
@@ -920,10 +927,16 @@ class ProfessorAgent(BaseAgent):
         self.phases = ["report writing"]
 
     def context(self, phase):
-        """
-        Provides relevant context for each phase.
-        """
-        # If you need second_round context, replicate the logic from others
+        # Example: minimal context for the professor
+        if self.second_round:
+            return (
+                "The following are second-round results or feedback:\n"
+                f"Previous Experiment code: {self.prev_results_code}\n"
+                f"Previous Results: {self.prev_exp_results}\n"
+                f"Previous Interpretation: {self.prev_interpretation}\n"
+                f"Previous Report: {self.prev_report}\n"
+                f"{self.reviewer_response}\n\n\n"
+            )
         return ""
 
     def phase_prompt(self, phase):
@@ -993,7 +1006,6 @@ class ReviewersAgent:
         notes=None, 
         openai_api_key=None
     ):
-        # ---------------------------------------------------------------------
         if notes is None:
             self.notes = []
         else:
@@ -1006,14 +1018,12 @@ class ReviewersAgent:
         """
         Invoke the `get_score` function with different reviewer personalities.
         """
-        # ---------------------------------------------------------------------
         # Guard clauses:
         if not plan:
             return "No plan provided to ReviewersAgent."
         if not report:
             return "No report provided to ReviewersAgent."
 
-        # ---------------------------------------------------------------------
         reviewer_1 = (
             "You are a harsh but fair reviewer and expect good experiments that "
             "lead to insights for the research topic."
@@ -1050,7 +1060,6 @@ class ReviewersAgent:
             openai_api_key=self.openai_api_key
         )
 
-        # ---------------------------------------------------------------------
         return (
             f"Reviewer #1:\n{review_1},\n"
             f"Reviewer #2:\n{review_2},\n"
