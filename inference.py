@@ -1,7 +1,11 @@
-import time, tiktoken
-from openai import OpenAI
+import os
+import time
+import json
+
 import openai
-import os, anthropic, json
+import anthropic
+from openai import OpenAI
+import tiktoken
 
 MODEL_ALIASES = {
     "gpt-4o-mini": "gpt-4o-mini",
@@ -122,7 +126,7 @@ def query_model(model_str, prompt, system_prompt, openai_api_key=None, anthropic
                 else:
                     completion = openai_create_chat_completion("gpt-4o-mini-2024-07-18", messages, version=version, temp=temp)
                 answer = extract_answer_from_openai(completion)
-            elif model_str == "claude-3-5-sonnet":
+            elif model_str == "claude-3.5-sonnet":
                 client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
                 message = client.messages.create(
                     model="claude-3-5-sonnet-latest",
@@ -179,7 +183,7 @@ def query_model(model_str, prompt, system_prompt, openai_api_key=None, anthropic
                 answer = extract_answer_from_openai(completion)
 
             try:
-                if model_str in ["o1-preview", "o1-mini", "claude-3-5-sonnet", "o1"]:
+                if model_str in ["o1-preview", "o1-mini", "claude-3.5-sonnet", "o1"]:
                     encoding = tiktoken.encoding_for_model("gpt-4o")
                 elif model_str in ["deepseek-chat"]:
                     encoding = tiktoken.encoding_for_model("cl100k_base")
@@ -202,5 +206,4 @@ def query_model(model_str, prompt, system_prompt, openai_api_key=None, anthropic
             continue
     raise Exception("Max retries: timeout")
 
-
-#print(query_model(model_str="o1-mini", prompt="hi", system_prompt="hey"))
+# print(query_model(model_str="o1-mini", prompt="hi", system_prompt="hey"))
