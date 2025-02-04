@@ -675,7 +675,7 @@ if __name__ == "__main__":
         "running experiments":    llm_backend,
         "report writing":         llm_backend,
         "results interpretation": llm_backend,
-        "paper refinement":       llm_backend,
+        "report refinement":      llm_backend,
     }
 
     if load_existing:
