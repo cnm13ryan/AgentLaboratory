@@ -11,83 +11,97 @@ DEFAULT_LLM_BACKBONE = "o1-mini"
 
 
 class LaboratoryWorkflow:
-    def __init__(self, research_topic, openai_api_key, max_steps=100, num_papers_lit_review=5, agent_model_backbone=f"{DEFAULT_LLM_BACKBONE}", notes=list(), human_in_loop_flag=None, compile_pdf=True, mlesolver_max_steps=3, papersolver_max_steps=5):
+    def __init__(self, research_topic, openai_api_key, max_steps=100, num_papers_lit_review=5,
+                 agent_model_backbone=f"{DEFAULT_LLM_BACKBONE}", notes=list(), human_in_loop_flag=None,
+                 compile_pdf=True, mlesolver_max_steps=3, papersolver_max_steps=5):
         """
         Initialize laboratory workflow
-        @param research_topic: (str) description of research idea to explore
-        @param max_steps: (int) max number of steps for each phase, i.e. compute tolerance budget
-        @param num_papers_lit_review: (int) number of papers to include in the lit review
-        @param agent_model_backbone: (str or dict) model backbone to use for agents
-        @param notes: (list) notes for agent to follow during tasks
+
+        Basic User Inputs:
+            @param research_topic: (str) description of research idea to explore
+            @param openai_api_key: (str) OpenAI API key for authentication
+            @param max_steps: (int) max number of steps for each phase (tolerance budget)
+            @param num_papers_lit_review: (int) number of papers to include in the literature review
+            @param agent_model_backbone: (str or dict) model backbone to use for agents
+            @param notes: (list) notes for agents to follow during tasks
+            @param human_in_loop_flag: (dict) flag to indicate if human feedback is required for each phase
+            @param compile_pdf: (bool) whether to compile LaTeX into PDF during the report writing phase
+            @param mlesolver_max_steps: (int) maximum steps for the MLE solver during experiments
+            @param papersolver_max_steps: (int) maximum steps for the paper solver during report writing
+
         """
-        self.notes = notes
-        self.max_steps = max_steps
-        self.compile_pdf = compile_pdf
-        self.openai_api_key = openai_api_key
+        # ---- Basic User Inputs ----
         self.research_topic = research_topic
-        self.model_backbone = agent_model_backbone
+        self.openai_api_key = openai_api_key
+        self.max_steps = max_steps
         self.num_papers_lit_review = num_papers_lit_review
-
-        self.print_cost = True
-        self.review_override = True  # should review be overridden?
-        self.review_ovrd_steps = 0  # review steps so far
-        self.arxiv_paper_exp_time = 3
-        self.reference_papers = list()
-
-        ##########################################
-        ####### COMPUTE BUDGET PARAMETERS ########
-        ##########################################
-        self.num_ref_papers = 1
-        self.review_total_steps = 0  # num steps to take if overridden
-        self.arxiv_num_summaries = 5
+        self.model_backbone = agent_model_backbone
+        self.notes = notes
+        self.human_in_loop_flag = human_in_loop_flag
+        self.compile_pdf = compile_pdf
         self.mlesolver_max_steps = mlesolver_max_steps
         self.papersolver_max_steps = papersolver_max_steps
 
+        # ---- Workflow Flags & Counters ----
+        self.print_cost = True
+        self.review_override = True     # should review be overridden?
+        self.review_ovrd_steps = 0       # counter for review override steps
+        self.arxiv_paper_exp_time = 3    # expiration timer for arXiv paper summaries
+        self.reference_papers = list()
+
+        # ---- Phase Definitions & Compute Budget Parameters ----
+        self.num_ref_papers = 1
+        self.review_total_steps = 0     # number of review steps if overridden
+        self.arxiv_num_summaries = 5
         self.phases = [
             ("literature review", ["literature review"]),
             ("plan formulation", ["plan formulation"]),
             ("experimentation", ["data preparation", "running experiments"]),
             ("results interpretation", ["results interpretation", "report writing", "report refinement"]),
         ]
-        self.phase_status = dict()
+        self.phase_status = {}
         for phase, subtasks in self.phases:
             for subtask in subtasks:
                 self.phase_status[subtask] = False
 
-        self.phase_models = dict()
-        if type(agent_model_backbone) == str:
+        self.phase_models = {}
+        if isinstance(agent_model_backbone, str):
             for phase, subtasks in self.phases:
                 for subtask in subtasks:
                     self.phase_models[subtask] = agent_model_backbone
-        elif type(agent_model_backbone) == dict:
-            # todo: check if valid
+        elif isinstance(agent_model_backbone, dict):
+            # TODO: add validation if necessary
             self.phase_models = agent_model_backbone
 
-        self.human_in_loop_flag = human_in_loop_flag
-
+        # ---- Statistics ----
         self.statistics_per_phase = {
-            "literature review":      {"time": 0.0, "steps": 0.0,},
-            "plan formulation":       {"time": 0.0, "steps": 0.0,},
-            "data preparation":       {"time": 0.0, "steps": 0.0,},
-            "running experiments":    {"time": 0.0, "steps": 0.0,},
-            "results interpretation": {"time": 0.0, "steps": 0.0,},
-            "report writing":         {"time": 0.0, "steps": 0.0,},
-            "report refinement":      {"time": 0.0, "steps": 0.0,},
+            "literature review":      {"time": 0.0, "steps": 0.0},
+            "plan formulation":       {"time": 0.0, "steps": 0.0},
+            "data preparation":       {"time": 0.0, "steps": 0.0},
+            "running experiments":    {"time": 0.0, "steps": 0.0},
+            "results interpretation": {"time": 0.0, "steps": 0.0},
+            "report writing":         {"time": 0.0, "steps": 0.0},
+            "report refinement":      {"time": 0.0, "steps": 0.0},
         }
 
+        # ---- Agent Creation ----
         self.save = True
         self.verbose = True
         self.reviewers = ReviewersAgent(model=self.model_backbone, notes=self.notes, openai_api_key=self.openai_api_key)
-        self.phd = PhDStudentAgent(model=self.model_backbone, notes=self.notes, max_steps=self.max_steps, openai_api_key=self.openai_api_key)
-        self.postdoc = PostdocAgent(model=self.model_backbone, notes=self.notes, max_steps=self.max_steps, openai_api_key=self.openai_api_key)
-        self.professor = ProfessorAgent(model=self.model_backbone, notes=self.notes, max_steps=self.max_steps, openai_api_key=self.openai_api_key)
-        self.ml_engineer = MLEngineerAgent(model=self.model_backbone, notes=self.notes, max_steps=self.max_steps, openai_api_key=self.openai_api_key)
-        self.sw_engineer = SWEngineerAgent(model=self.model_backbone, notes=self.notes, max_steps=self.max_steps, openai_api_key=self.openai_api_key)
+        self.phd = PhDStudentAgent(model=self.model_backbone, notes=self.notes, max_steps=self.max_steps,
+                                    openai_api_key=self.openai_api_key)
+        self.postdoc = PostdocAgent(model=self.model_backbone, notes=self.notes, max_steps=self.max_steps,
+                                    openai_api_key=self.openai_api_key)
+        self.professor = ProfessorAgent(model=self.model_backbone, notes=self.notes, max_steps=self.max_steps,
+                                        openai_api_key=self.openai_api_key)
+        self.ml_engineer = MLEngineerAgent(model=self.model_backbone, notes=self.notes, max_steps=self.max_steps,
+                                           openai_api_key=self.openai_api_key)
+        self.sw_engineer = SWEngineerAgent(model=self.model_backbone, notes=self.notes, max_steps=self.max_steps,
+                                           openai_api_key=self.openai_api_key)
 
-        # remove previous files
+        # ---- Directory Setup ----
         remove_figures()
         remove_directory("research_dir")
-        # make src and research directory
         if not os.path.exists("state_saves"):
             os.mkdir(os.path.join(".", "state_saves"))
         os.mkdir(os.path.join(".", "research_dir"))
@@ -159,7 +173,6 @@ class LaboratoryWorkflow:
                     self.perform_research()
                 if self.save:
                     self.save_state(subtask)
-                # Calculate and print the duration of the phase
                 phase_end_time = time.time()
                 phase_duration = phase_end_time - phase_start_time
                 print(f"Subtask '{subtask}' completed in {phase_duration:.2f} seconds.")
@@ -173,7 +186,6 @@ class LaboratoryWorkflow:
         """
         arx_eng = ArxivSearch()
         max_tries = self.max_steps * 5  # lit review often requires extra steps
-        # get initial response from PhD agent
         resp = self.phd.inference(self.research_topic, "literature review", step=0, temp=0.8)
         if self.verbose: print(resp, "\n~~~~~~~~~~~")
         for _i in range(max_tries):
@@ -253,7 +265,9 @@ class LaboratoryWorkflow:
         hf_engine = HFDataSearch()
         for _i in range(max_tries):
             ml_feedback_in = "Feedback provided to the ML agent: " + ml_feedback if ml_feedback != "" else ""
-            resp = self.sw_engineer.inference(self.research_topic, "data preparation", feedback=f"{ml_dialogue}\nFeedback from previous command: {swe_feedback}\n{ml_command}{ml_feedback_in}", step=_i)
+            resp = self.sw_engineer.inference(self.research_topic, "data preparation",
+                                              feedback=f"{ml_dialogue}\nFeedback from previous command: {swe_feedback}\n{ml_command}{ml_feedback_in}",
+                                              step=_i)
             swe_feedback = str()
             swe_dialogue = str()
             if "```DIALOGUE" in resp:
@@ -277,9 +291,8 @@ class LaboratoryWorkflow:
                     self.statistics_per_phase["data preparation"]["steps"] = _i
                     return False
             ml_feedback_in = "Feedback from previous command: " + ml_feedback if ml_feedback != "" else ""
-            resp = self.ml_engineer.inference(
-                self.research_topic, "data preparation",
-                feedback=f"{swe_dialogue}\n{ml_feedback_in}", step=_i)
+            resp = self.ml_engineer.inference(self.research_topic, "data preparation",
+                                              feedback=f"{swe_dialogue}\n{ml_feedback_in}", step=_i)
             ml_feedback = str()
             ml_dialogue = str()
             ml_command = str()
@@ -310,7 +323,11 @@ class LaboratoryWorkflow:
         experiment_notes = f"Notes for the task objective: {experiment_notes}\n" if len(experiment_notes) > 0 else ""
         from papersolver import PaperSolver
         self.reference_papers = []
-        solver = PaperSolver(notes=experiment_notes, max_steps=self.papersolver_max_steps, plan=self.phd.plan, exp_code=self.phd.results_code, exp_results=self.phd.exp_results, insights=self.phd.interpretation, lit_review=self.phd.lit_review, ref_papers=self.reference_papers, topic=self.research_topic, openai_api_key=self.openai_api_key, llm_str=self.model_backbone["report writing"], compile_pdf=self.compile_pdf)
+        solver = PaperSolver(notes=experiment_notes, max_steps=self.papersolver_max_steps, plan=self.phd.plan,
+                              exp_code=self.phd.results_code, exp_results=self.phd.exp_results, insights=self.phd.interpretation,
+                              lit_review=self.phd.lit_review, ref_papers=self.reference_papers, topic=self.research_topic,
+                              openai_api_key=self.openai_api_key, llm_str=self.model_backbone["report writing"],
+                              compile_pdf=self.compile_pdf)
         solver.initial_solve()
         for _ in range(self.papersolver_max_steps):
             solver.solve()
@@ -369,7 +386,11 @@ class LaboratoryWorkflow:
         report_notes = f"Notes for the task objective: {report_notes}\n" if len(report_notes) > 0 else ""
         from papersolver import PaperSolver
         self.reference_papers = []
-        solver = PaperSolver(notes=report_notes, max_steps=self.papersolver_max_steps, plan=self.phd.plan, exp_code=self.phd.results_code, exp_results=self.phd.exp_results, insights=self.phd.interpretation, lit_review=self.phd.lit_review, ref_papers=self.reference_papers, topic=self.research_topic, openai_api_key=self.openai_api_key, llm_str=self.model_backbone["report writing"], compile_pdf=self.compile_pdf)
+        solver = PaperSolver(notes=report_notes, max_steps=self.papersolver_max_steps, plan=self.phd.plan,
+                              exp_code=self.phd.results_code, exp_results=self.phd.exp_results, insights=self.phd.interpretation,
+                              lit_review=self.phd.lit_review, ref_papers=self.reference_papers, topic=self.research_topic,
+                              openai_api_key=self.openai_api_key, llm_str=self.model_backbone["report writing"],
+                              compile_pdf=self.compile_pdf)
         solver.initial_solve()
         for _ in range(self.papersolver_max_steps):
             solver.solve()
@@ -406,8 +427,7 @@ class LaboratoryWorkflow:
                     response = "y"
                     self.review_ovrd_steps += 1
             else:
-                response = self.phd.inference(
-                    research_topic=self.research_topic, phase="report refinement", feedback=review_prompt, step=0)
+                response = self.phd.inference(research_topic=self.research_topic, phase="report refinement", feedback=review_prompt, step=0)
             if len(response) == 0:
                 raise Exception("Model did not respond")
             response = response.lower().strip()[0]
@@ -589,7 +609,7 @@ if __name__ == "__main__":
     try:
         mlesolver_max_steps = int(args.mlesolver_max_steps.lower())
     except Exception:
-        raise Exception("args.papersolver_max_steps must be a valid integer!")
+        raise Exception("args.mlesolver_max_steps must be a valid integer!")
 
     api_key = os.getenv('OPENAI_API_KEY') or args.api_key
     deepseek_api_key = os.getenv('DEEPSEEK_API_KEY') or args.deepseek_api_key
@@ -599,7 +619,7 @@ if __name__ == "__main__":
         os.environ["DEEPSEEK_API_KEY"] = args.deepseek_api_key
 
     if not api_key and not deepseek_api_key:
-        raise ValueError("API key must be provided via --api-key / -deepseek-api-key or the OPENAI_API_KEY / DEEPSEEK_API_KEY environment variable.")
+        raise ValueError("API key must be provided via --api-key / --deepseek-api-key or the OPENAI_API_KEY / DEEPSEEK_API_KEY environment variable.")
 
     if human_mode or args.research_topic is None:
         research_topic = input("Please name an experiment idea for AgentLaboratory to perform: ")
@@ -608,7 +628,7 @@ if __name__ == "__main__":
 
     task_notes_LLM = [
         {"phases": ["plan formulation"],
-         "note": f"You should come up with a plan for TWO experiments."},
+         "note": "You should come up with a plan for TWO experiments."},
 
         {"phases": ["plan formulation", "data preparation", "running experiments"],
          "note": "Please use gpt-4o-mini for your experiments."},
