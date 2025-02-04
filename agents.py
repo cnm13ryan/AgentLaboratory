@@ -91,7 +91,76 @@ def _build_reviewer_system_prompt(reviewer_type=""):
     )
     return f"{base_str} {reviewer_type}\n{neurips_form}"
 
+def compute_performance_from_review(review_json):
+    """
+    Given review_json with fields like 'Overall', 'Soundness', 'Confidence', etc.,
+    parse them into numeric values, apply weighting, and compute a final score.
+    Returns the performance score as a float.
+    """
+
+    # Convert string-based fields into numeric (normalizing to 0..1 ranges)
+    overall = int(review_json["Overall"]) / 10
+    soundness = int(review_json["Soundness"]) / 4
+    confidence = int(review_json["Confidence"]) / 5
+    contribution = int(review_json["Contribution"]) / 4
+    presentation = int(review_json["Presentation"]) / 4
+    clarity = int(review_json["Clarity"]) / 4
+    originality = int(review_json["Originality"]) / 4
+    quality = int(review_json["Quality"]) / 4
+    significance = int(review_json["Significance"]) / 4
+
+    # Weighting factors for the final performance metric
+    clarity_weight = 0.1
+    quality_weight = 0.1
+    overall_weight = 1.0
+    soundness_weight = 0.1
+    confidence_weight = 0.1
+    originality_weight = 0.1
+    significance_weight = 0.1
+    contribution_weight = 0.4
+    presentation_weight = 0.2
+
+    # Calculate the sum of all weights
+    max_score = (
+        clarity_weight
+        + quality_weight
+        + overall_weight
+        + soundness_weight
+        + confidence_weight
+        + originality_weight
+        + significance_weight
+        + contribution_weight
+        + presentation_weight
+    )
+
+    # Weighted average, scaled to 10
+    performance = (
+        (
+            (soundness_weight * soundness)
+            + (presentation_weight * presentation)
+            + (confidence_weight * confidence)
+            + (contribution_weight * contribution)
+            + (overall_weight * overall)
+            + (originality_weight * originality)
+            + (significance_weight * significance)
+            + (clarity_weight * clarity)
+            + (quality_weight * quality)
+        )
+        / max_score
+    ) * 10
+
+    return performance
+
 def get_score(outlined_plan, latex, reward_model_llm, reviewer_type=None, attempts=3, openai_api_key=None):
+    """
+    Given a plan (outlined_plan) and associated LaTeX (latex),
+    use a reward model LLM (reward_model_llm) to generate a review,
+    parse it into JSON, and derive a performance score.
+    Returns:
+        performance (float): Calculated performance score.
+        message (str): Explanation or error reason.
+        success (bool): Whether scoring succeeded or not.
+    """
     # Guard clauses for missing critical inputs:
     if not outlined_plan:
         return 0.0, "Missing 'outlined_plan'.", False
@@ -100,12 +169,13 @@ def get_score(outlined_plan, latex, reward_model_llm, reviewer_type=None, attemp
     if not reward_model_llm:
         return 0.0, "Missing 'reward_model_llm' (LLM model name).", False
 
-    e = ""
+    exception_msg = ""
     for _attempt in range(attempts):
         try:
-            if reviewer_type is None:
-                reviewer_type = ""
-            sys = _build_reviewer_system_prompt(reviewer_type)
+            final_reviewer_type = reviewer_type or ""
+            sys = _build_reviewer_system_prompt(final_reviewer_type)
+
+            # Query the model
             scoring = query_model(
                 model_str=reward_model_llm,
                 system_prompt=sys,
@@ -117,39 +187,28 @@ def get_score(outlined_plan, latex, reward_model_llm, reviewer_type=None, attemp
                 temp=0.0
             )
 
+            # Parse JSON from the LLM output
             review_json = extract_json_between_markers(scoring)
+            if not review_json:
+                return 0.0, "Could not parse valid JSON review.", False
 
-            overall = int(review_json["Overall"]) / 10
-            soundness = int(review_json["Soundness"]) / 4
-            confidence = int(review_json["Confidence"]) / 5
-            contribution = int(review_json["Contribution"]) / 4
-            presentation = int(review_json["Presentation"]) / 4
-            clarity = int(review_json["Clarity"]) / 4
-            originality = int(review_json["Originality"]) / 4
-            quality = int(review_json["Quality"]) / 4
-            significance = int(review_json["Significance"]) / 4
+            # Use the helper function to compute performance
+            performance = compute_performance_from_review(review_json)
 
-            clarity_weight = 0.1
-            quality_weight = 0.1
-            overall_weight = 1.0
-            soundness_weight = 0.1
-            confidence_weight = 0.1
-            originality_weight = 0.1
-            significance_weight = 0.1
-            contribution_weight = 0.4
-            presentation_weight = 0.2
+            # Return the final score, plus the model's generated text
+            return (
+                performance,
+                f"The performance of your submission is: {performance}\n{scoring}",
+                True
+            )
 
-            # max possible
-            max_score = (
-                clarity_weight + quality_weight + overall_weight + soundness_weight + confidence_weight + originality_weight + significance_weight + contribution_weight + presentation_weight)
+        except Exception as ex:
+            exception_msg = str(ex)
+            # Try next attempt if any remain
+            continue
 
-            performance = ((
-               soundness_weight * soundness + presentation_weight * presentation + confidence_weight * confidence + contribution_weight * contribution + overall_weight * overall + originality_weight * originality + significance * significance_weight + clarity_weight * clarity + quality_weight * quality) / max_score) * 10
-            return performance, f"The performance of your submission is: {performance}" + scoring, True
-        except Exception as e:
-            print(e)
-            return None, str(e), False
-    return 0, e
+    # If all attempts failed
+    return 0.0, exception_msg, False
 
 
 class ReviewersAgent:
