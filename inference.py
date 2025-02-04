@@ -109,7 +109,35 @@ def extract_answer_from_openai(completion):
 def extract_answer_from_anthropic(message):
     return json.loads(message.to_json())["content"][0]["text"]
 
-def query_model(model_str, prompt, system_prompt, openai_api_key=None, anthropic_api_key=None, tries=5, timeout=5.0, temp=None, print_cost=True, version="1.5"):
+def _update_token_usage_and_print_cost(model_name, system_prompt, user_prompt, answer, print_cost=True):
+    """
+    Helper to update global token usage counters for the given model,
+    and optionally print the approximate cost so far.
+    """
+    try:
+        if model_name in ["o1-preview", "o1-mini", "claude-3.5-sonnet", "o1"]:
+            encoding_to_use = tiktoken.encoding_for_model("gpt-4o")
+        elif model_name in ["deepseek-chat"]:
+            encoding_to_use = tiktoken.encoding_for_model("cl100k_base")
+        else:
+            encoding_to_use = tiktoken.encoding_for_model(model_name)
+
+        if model_name not in TOKENS_IN:
+            TOKENS_IN[model_name] = 0
+            TOKENS_OUT[model_name] = 0
+
+        TOKENS_IN[model_name] += len(encoding_to_use.encode(system_prompt + user_prompt))
+        TOKENS_OUT[model_name] += len(encoding_to_use.encode(answer))
+
+        if print_cost:
+            print(f"Current experiment cost = ${curr_cost_est():.4f}, ** Approximate values, may not reflect true cost")
+
+    except Exception as e:
+        if print_cost:
+            print(f"Cost approximation has an error? {e}")
+
+def query_model(model_str, prompt, system_prompt, openai_api_key=None, anthropic_api_key=None,
+                tries=5, timeout=5.0, temp=None, print_cost=True, version="1.5"):
     model_str = MODEL_ALIASES.get(model_str, model_str)
     if model_str not in VALID_MODELS:
         raise ValueError(f"Unsupported model name or alias: {model_str}")
@@ -124,6 +152,7 @@ def query_model(model_str, prompt, system_prompt, openai_api_key=None, anthropic
         os.environ["OPENAI_API_KEY"] = openai_api_key
     if anthropic_api_key is not None:
         os.environ["ANTHROPIC_API_KEY"] = anthropic_api_key
+
     for _ in range(tries):
         try:
             if model_str == "gpt-4o-mini":
@@ -195,25 +224,14 @@ def query_model(model_str, prompt, system_prompt, openai_api_key=None, anthropic
                     completion = openai_create_chat_completion("o1-preview", messages, version=version, temp=temp)
                 answer = extract_answer_from_openai(completion)
 
-            try:
-                if model_str in ["o1-preview", "o1-mini", "claude-3.5-sonnet", "o1"]:
-                    encoding_to_use = tiktoken.encoding_for_model("gpt-4o")
-                elif model_str in ["deepseek-chat"]:
-                    encoding_to_use = tiktoken.encoding_for_model("cl100k_base")
-                else:
-                    encoding_to_use = tiktoken.encoding_for_model(model_str)
-
-                if model_str not in TOKENS_IN:
-                    TOKENS_IN[model_str] = 0
-                    TOKENS_OUT[model_str] = 0
-                TOKENS_IN[model_str] += len(encoding_to_use.encode(system_prompt + prompt))
-                TOKENS_OUT[model_str] += len(encoding_to_use.encode(answer))
-
-                if print_cost:
-                    print(f"Current experiment cost = ${curr_cost_est():.4f}, ** Approximate values, may not reflect true cost")
-            except Exception as e:
-                if print_cost:
-                    print(f"Cost approximation has an error? {e}")
+            # Now update token usage and optionally print cost:
+            _update_token_usage_and_print_cost(
+                model_name=model_str,
+                system_prompt=system_prompt,
+                user_prompt=prompt,
+                answer=answer,
+                print_cost=print_cost
+            )
 
             return answer
 
