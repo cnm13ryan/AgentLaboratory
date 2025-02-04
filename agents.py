@@ -214,8 +214,17 @@ class ReviewersAgent:
 
 class BaseAgent:
     def __init__(self, model="gpt-4o-mini", notes=None, max_steps=100, openai_api_key=None):
-        if notes is None: self.notes = []
-        else: self.notes = notes
+        # Guard clauses:
+        if model is None:
+            raise ValueError("model must be specified (string).")
+        if max_steps <= 0:
+            raise ValueError("max_steps should be > 0.")
+
+        if notes is None:
+            self.notes = []
+        else:
+            self.notes = notes
+
         self.max_steps = max_steps
         self.model = model
         self.phases = []
