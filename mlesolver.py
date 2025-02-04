@@ -14,6 +14,10 @@ from inference import *
 
 @contextmanager
 def suppress_stdout():
+    """
+    Temporarily redirect stdout to devnull.
+    Useful to suppress unwanted output during code execution.
+    """
     with open(os.devnull, "w") as devnull:
         old_stdout = sys.stdout
         sys.stdout = devnull
@@ -39,18 +43,30 @@ class Command:
 
     @abstractmethod
     def docstring(self) -> str:
+        """
+        Returns a description of the command.
+        """
         pass
 
     @abstractmethod
     def execute_command(self, *args) -> str:
+        """
+        Executes the command with given arguments.
+        """
         pass
 
     @abstractmethod
     def matches_command(self, cmd_str) -> bool:
+        """
+        Checks if the command string matches this command.
+        """
         pass
 
     @abstractmethod
     def parse_command(self, cmd_str) -> tuple:
+        """
+        Parses the command string into its components.
+        """
         pass
 
 
