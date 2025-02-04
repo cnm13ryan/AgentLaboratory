@@ -46,10 +46,23 @@ def curr_cost_est():
         "deepseek-chat": 5.00 / 1000000,
         "o1": 60.00 / 1000000,
     }
-    return sum([costmap_in[_]*TOKENS_IN[_] for _ in TOKENS_IN]) + sum([costmap_out[_]*TOKENS_OUT[_] for _ in TOKENS_OUT])
+    return sum([costmap_in[m]*TOKENS_IN[m] for m in TOKENS_IN]) + sum([costmap_out[m]*TOKENS_OUT[m] for m in TOKENS_OUT])
+
+def build_messages(system_prompt, prompt, role="user", single_user_msg=False):
+    """
+    Build the messages list.
+    If single_user_msg is True, concatenate system_prompt and prompt into one message.
+    Otherwise, return a two-message list with system and user roles.
+    """
+    if single_user_msg:
+        return [{"role": "user", "content": system_prompt + prompt}]
+    else:
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": role, "content": prompt},
+        ]
 
 def query_model(model_str, prompt, system_prompt, openai_api_key=None, anthropic_api_key=None, tries=5, timeout=5.0, temp=None, print_cost=True, version="1.5"):
-
     model_str = MODEL_ALIASES.get(model_str, model_str)
     if model_str not in VALID_MODELS:
         raise ValueError(f"Unsupported model name or alias: {model_str}")
@@ -67,66 +80,59 @@ def query_model(model_str, prompt, system_prompt, openai_api_key=None, anthropic
     for _ in range(tries):
         try:
             if model_str == "gpt-4o-mini":
-                # gpt-4o-mini branch remains similar but now using the canonical name
-                messages = [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}]
+                messages = build_messages(system_prompt, prompt)
                 if version == "0.28":
                     if temp is None:
                         completion = openai.ChatCompletion.create(
-                            model=f"{model_str}",  # engine = "deployment_name".
+                            model=model_str,
                             messages=messages
                         )
                     else:
                         completion = openai.ChatCompletion.create(
-                            model=f"{model_str}",  # engine = "deployment_name".
+                            model=model_str,
                             messages=messages, temperature=temp
                         )
                 else:
                     client = OpenAI()
                     if temp is None:
                         completion = client.chat.completions.create(
-                            model="gpt-4o-mini-2024-07-18", messages=messages, )
+                            model="gpt-4o-mini-2024-07-18", messages=messages)
                     else:
                         completion = client.chat.completions.create(
                             model="gpt-4o-mini-2024-07-18", messages=messages, temperature=temp)
                 answer = completion.choices[0].message.content
-            elif model_str == "claude-3.5-sonnet":
+            elif model_str == "claude-3-5-sonnet":
                 client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+                # For Claude, no change here since we use a separate pattern.
                 message = client.messages.create(
                     model="claude-3-5-sonnet-latest",
                     system=system_prompt,
-                    messages=[{"role": "user", "content": prompt}])
+                    messages=[{"role": "user", "content": prompt}]
+                )
                 answer = json.loads(message.to_json())["content"][0]["text"]
-            elif model_str == "gpt4o" or model_str == "gpt-4o":
-                model_str = "gpt-4o"
-                messages = [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}]
+            elif model_str == "gpt-4o":
+                messages = build_messages(system_prompt, prompt)
                 if version == "0.28":
                     if temp is None:
                         completion = openai.ChatCompletion.create(
-                            model=f"{model_str}",  # engine = "deployment_name".
+                            model=model_str,
                             messages=messages
                         )
                     else:
                         completion = openai.ChatCompletion.create(
-                            model=f"{model_str}",  # engine = "deployment_name".
+                            model=model_str,
                             messages=messages, temperature=temp)
                 else:
                     client = OpenAI()
                     if temp is None:
                         completion = client.chat.completions.create(
-                            model="gpt-4o-2024-08-06", messages=messages, )
+                            model="gpt-4o-2024-08-06", messages=messages)
                     else:
                         completion = client.chat.completions.create(
                             model="gpt-4o-2024-08-06", messages=messages, temperature=temp)
                 answer = completion.choices[0].message.content
             elif model_str == "deepseek-chat":
-                model_str = "deepseek-chat"
-                messages = [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}]
+                messages = build_messages(system_prompt, prompt)
                 if version == "0.28":
                     raise Exception("Please upgrade your OpenAI version to use DeepSeek client")
                 else:
@@ -141,16 +147,13 @@ def query_model(model_str, prompt, system_prompt, openai_api_key=None, anthropic
                     else:
                         completion = deepseek_client.chat.completions.create(
                             model="deepseek-chat",
-                            messages=messages,
-                            temperature=temp)
+                            messages=messages, temperature=temp)
                 answer = completion.choices[0].message.content
             elif model_str == "o1-mini":
-                model_str = "o1-mini"
-                messages = [
-                    {"role": "user", "content": system_prompt + prompt}]
+                messages = build_messages(system_prompt, prompt, single_user_msg=True)
                 if version == "0.28":
                     completion = openai.ChatCompletion.create(
-                        model=f"{model_str}",  # engine = "deployment_name".
+                        model=model_str,
                         messages=messages)
                 else:
                     client = OpenAI()
@@ -158,12 +161,10 @@ def query_model(model_str, prompt, system_prompt, openai_api_key=None, anthropic
                         model="o1-mini-2024-09-12", messages=messages)
                 answer = completion.choices[0].message.content
             elif model_str == "o1":
-                model_str = "o1"
-                messages = [
-                    {"role": "user", "content": system_prompt + prompt}]
+                messages = build_messages(system_prompt, prompt, single_user_msg=True)
                 if version == "0.28":
                     completion = openai.ChatCompletion.create(
-                        model="o1-2024-12-17",  # engine = "deployment_name".
+                        model="o1-2024-12-17",
                         messages=messages)
                 else:
                     client = OpenAI()
@@ -171,12 +172,10 @@ def query_model(model_str, prompt, system_prompt, openai_api_key=None, anthropic
                         model="o1-2024-12-17", messages=messages)
                 answer = completion.choices[0].message.content
             elif model_str == "o1-preview":
-                model_str = "o1-preview"
-                messages = [
-                    {"role": "user", "content": system_prompt + prompt}]
+                messages = build_messages(system_prompt, prompt, single_user_msg=True)
                 if version == "0.28":
                     completion = openai.ChatCompletion.create(
-                        model=f"{model_str}",  # engine = "deployment_name".
+                        model=model_str,
                         messages=messages)
                 else:
                     client = OpenAI()
@@ -185,7 +184,7 @@ def query_model(model_str, prompt, system_prompt, openai_api_key=None, anthropic
                 answer = completion.choices[0].message.content
 
             try:
-                if model_str in ["o1-preview", "o1-mini", "claude-3.5-sonnet", "o1"]:
+                if model_str in ["o1-preview", "o1-mini", "claude-3-5-sonnet", "o1"]:
                     encoding = tiktoken.encoding_for_model("gpt-4o")
                 elif model_str in ["deepseek-chat"]:
                     encoding = tiktoken.encoding_for_model("cl100k_base")
