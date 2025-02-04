@@ -37,7 +37,15 @@ def extract_json_between_markers(llm_output):
 
 
 def get_score(outlined_plan, latex, reward_model_llm, reviewer_type=None, attempts=3, openai_api_key=None):
-    e = str()
+    # Guard clauses for missing critical inputs:
+    if not outlined_plan:
+        return 0.0, "Missing 'outlined_plan'.", False
+    if not latex:
+        return 0.0, "Missing 'latex'.", False
+    if not reward_model_llm:
+        return 0.0, "Missing 'reward_model_llm' (LLM model name).", False
+
+    e = ""
     for _attempt in range(attempts):
         try:
             # todo: have a reward function here
