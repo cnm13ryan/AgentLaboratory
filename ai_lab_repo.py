@@ -110,9 +110,13 @@ class LaboratoryWorkflow:
 
     def perform_research(self):
         """
-        Loop through all research phases
+        Loop through all research phases/subtasks and perform them in order.
         @return: None
         """
+        if not self.openai_api_key:
+            print("No API key provided; aborting research workflow.")
+            return
+
         for phase, subtasks in self.phases:
             phase_start_time = time.time()  # Start timing the phase
             if self.verbose: print(f"{'*'*50}\nBeginning phase: {phase}\n{'*'*50}")
