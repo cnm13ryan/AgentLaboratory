@@ -274,6 +274,35 @@ class BaseAgent:
             f"{self.command_descriptions(phase)}"
         )
 
+    def build_user_prompt(self, research_topic, phase, step, feedback):
+        """
+        Helper to build the user prompt portion (context, history, feedback, etc.).
+        """
+        if not research_topic:
+            return "No research topic provided."
+        if not phase:
+            return "No phase provided."
+        if step < 0:
+            return "Step cannot be negative."
+
+        context_str = self.context(phase)
+        history_str = "\n".join([h[1] for h in self.history])
+        complete_str = ""
+        if step / (self.max_steps - 1) > 0.7:
+            complete_str = "You must finish this task and submit as soon as possible!"
+
+        prompt = (
+            f"{context_str}\n"
+            f"{'~' * 10}\nHistory: {history_str}\n{'~' * 10}\n"
+            f"Current Step #{step}, Phase: {phase}\n{complete_str}\n"
+            f"[Objective] Your goal is to perform research on the following topic: {research_topic}\n"
+            f"Feedback: {feedback}\n"
+            f"Notes: {[n for n in self.notes if phase in n.get('phases', [])]}\n"
+            f"Your previous command was: {self.prev_comm}.\n"
+            f"Please produce a single command below:\n"
+        )
+        return prompt
+
     def inference(self, research_topic, phase, step, feedback="", temp=None):
         # Guard clauses:
         if not research_topic:
@@ -285,26 +314,9 @@ class BaseAgent:
 
         # Build system prompt
         sys_prompt = self.build_system_prompt(phase)
-
-        # Build context and history strings
-        context = self.context(phase)
-        history_str = "\n".join([h[1] for h in self.history])
-        phase_notes = [note for note in self.notes if phase in note.get("phases", [])]
-        notes_str = f"Notes for the task objective: {phase_notes}\n" if phase_notes else ""
-
-        # Check if nearing final steps to enforce completion urgency
-        complete_str = ""
-        if step / (self.max_steps - 1) > 0.7:
-            complete_str = "You must finish this task and submit as soon as possible!"
-
-        # Assemble full prompt for LLM query
-        prompt = (
-            f"{context}\n{'~' * 10}\nHistory: {history_str}\n{'~' * 10}\n"
-            f"Current Step #{step}, Phase: {phase}\n{complete_str}\n"
-            f"[Objective] Your goal is to perform research on the following topic: {research_topic}\n"
-            f"Feedback: {feedback}\nNotes: {notes_str}\n"
-            f"Your previous command was: {self.prev_comm}.\nPlease produce a single command below:\n"
-        )
+        
+        # Build user prompt
+        user_prompt = self.build_user_prompt(research_topic, phase, step, feedback)
 
         # Query the model
         model_resp = query_model(
