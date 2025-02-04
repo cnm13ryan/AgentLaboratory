@@ -94,45 +94,55 @@ class HFDataSearch:
         top_indices = [int(i) for i in top_indices]
         top_datasets = [self.ds[i] for i in top_indices]
 
-        # Retrieve split information (test/train) later via helper method (to be refactored in Commit 3)
-        has_test_set = []
-        has_train_set = []
-        ds_size_info = []
-        for i in top_indices:
+        # Use helper method to collect split info
+        test_info, train_info = self._collect_ds_split_info(top_indices)
+        for i, ds_item in enumerate(top_datasets):
+            ds_item["has_test_set"] = test_info[top_indices[i]]["has"]
+            ds_item["test_download_size"] = test_info[top_indices[i]]["download_size"]
+            ds_item["test_element_size"] = test_info[top_indices[i]]["element_size"]
+            ds_item["has_train_set"] = train_info[top_indices[i]]["has"]
+            ds_item["train_download_size"] = train_info[top_indices[i]]["download_size"]
+            ds_item["train_element_size"] = train_info[top_indices[i]]["element_size"]
+        return top_datasets
+
+    def _collect_ds_split_info(self, indices):
+        """
+        Helper function that collects test/train split info for given dataset indices.
+        Returns two dictionaries (test_info, train_info) keyed by dataset index.
+        """
+        test_info = {}
+        train_info = {}
+        for i in indices:
             try:
                 dbuilder = load_dataset_builder(self.ds[i]["id"], trust_remote_code=True).info
             except Exception:
-                has_test_set.append(False)
-                has_train_set.append(False)
-                ds_size_info.append((None, None, None, None))
+                test_info[i] = {"has": False, "download_size": None, "element_size": None}
+                train_info[i] = {"has": False, "download_size": None, "element_size": None}
                 continue
 
             if dbuilder.splits is None:
-                has_test_set.append(False)
-                has_train_set.append(False)
-                ds_size_info.append((None, None, None, None))
+                test_info[i] = {"has": False, "download_size": None, "element_size": None}
+                train_info[i] = {"has": False, "download_size": None, "element_size": None}
                 continue
 
-            has_test, has_train = "test" in dbuilder.splits, "train" in dbuilder.splits
-            has_test_set.append(has_test)
-            has_train_set.append(has_train)
-            test_dwn_size, test_elem_size = None, None
-            train_dwn_size, train_elem_size = None, None
-            if has_test:
-                test_dwn_size = bytes2human(dbuilder.splits["test"].num_bytes)
-                test_elem_size = dbuilder.splits["test"].num_examples
-            if has_train:
-                train_dwn_size = bytes2human(dbuilder.splits["train"].num_bytes)
-                train_elem_size = dbuilder.splits["train"].num_examples
-            ds_size_info.append((test_dwn_size, test_elem_size, train_dwn_size, train_elem_size))
-        for i, ds_item in enumerate(top_datasets):
-            ds_item["has_test_set"] = has_test_set[i]
-            ds_item["has_train_set"] = has_train_set[i]
-            ds_item["test_download_size"] = ds_size_info[i][0]
-            ds_item["test_element_size"] = ds_size_info[i][1]
-            ds_item["train_download_size"] = ds_size_info[i][2]
-            ds_item["train_element_size"] = ds_size_info[i][3]
-        return top_datasets
+            if "test" in dbuilder.splits:
+                test_info[i] = {
+                    "has": True,
+                    "download_size": bytes2human(dbuilder.splits["test"].num_bytes),
+                    "element_size": dbuilder.splits["test"].num_examples
+                }
+            else:
+                test_info[i] = {"has": False, "download_size": None, "element_size": None}
+
+            if "train" in dbuilder.splits:
+                train_info[i] = {
+                    "has": True,
+                    "download_size": bytes2human(dbuilder.splits["train"].num_bytes),
+                    "element_size": dbuilder.splits["train"].num_examples
+                }
+            else:
+                train_info[i] = {"has": False, "download_size": None, "element_size": None}
+        return test_info, train_info
 
     def results_str(self, results):
         """
