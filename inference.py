@@ -50,7 +50,7 @@ COSTS_OUT = {
 
 encoding = tiktoken.get_encoding("cl100k_base")
 
-def curr_cost_est():
+def estimate_current_cost():
     """
     Summation of input token cost + output token cost so far.
     """
@@ -130,7 +130,7 @@ def _update_token_usage_and_print_cost(model_name, system_prompt, user_prompt, a
         TOKENS_OUT[model_name] += len(encoding_to_use.encode(answer))
 
         if print_cost:
-            print(f"Current experiment cost = ${curr_cost_est():.4f}, ** Approximate values, may not reflect true cost")
+            print(f"Current experiment cost = ${estimate_current_cost():.4f}, ** Approximate values, may not reflect true cost")
 
     except Exception as e:
         if print_cost:
@@ -224,7 +224,6 @@ def query_model(model_str, prompt, system_prompt, openai_api_key=None, anthropic
                     completion = openai_create_chat_completion("o1-preview", messages, version=version, temp=temp)
                 answer = extract_answer_from_openai(completion)
 
-            # Now update token usage and optionally print cost:
             _update_token_usage_and_print_cost(
                 model_name=model_str,
                 system_prompt=system_prompt,
