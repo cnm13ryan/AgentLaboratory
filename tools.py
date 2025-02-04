@@ -18,11 +18,15 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 
 class HFDataSearch:
+    """
+    Class for finding relevant Hugging Face datasets by searching dataset descriptions
+    and scoring them based on textual similarity, likes, and downloads.
+    """
     def __init__(self, like_thr=3, dwn_thr=50) -> None:
         """
-        Class for finding relevant Hugging Face datasets.
-        :param like_thr: Minimum likes threshold.
-        :param dwn_thr: Minimum downloads threshold.
+        Initialize the dataset search with thresholds.
+        :param like_thr: Minimum number of likes required.
+        :param dwn_thr: Minimum number of downloads required.
         """
         self.dwn_thr = dwn_thr
         self.like_thr = like_thr
@@ -34,11 +38,9 @@ class HFDataSearch:
         filtered_likes = []
         filtered_downloads = []
 
-        # Iterate over the dataset and filter based on criteria
         for idx, item in enumerate(self.ds):
             likes = int(item['likes']) if item['likes'] is not None else 0
             downloads = int(item['downloads']) if item['downloads'] is not None else 0
-
             if likes >= self.like_thr and downloads >= self.dwn_thr:
                 description = item['description']
                 if isinstance(description, str) and description.strip():
@@ -66,7 +68,9 @@ class HFDataSearch:
         self.description_vectors = self.vectorizer.fit_transform(self.descriptions)
 
     def _normalize(self, arr):
-        """Perform min-max normalization to scale array values to [0, 1]."""
+        """
+        Normalize an array to the range [0, 1] using min-max normalization.
+        """
         min_val = arr.min()
         max_val = arr.max()
         if max_val - min_val == 0:
@@ -75,8 +79,8 @@ class HFDataSearch:
 
     def retrieve_ds(self, query, N=10, sim_w=1.0, like_w=0.0, dwn_w=0.0):
         """
-        Retrieves the top N datasets matching the query,
-        weighted by cosine similarity, likes, and downloads.
+        Retrieve the top N datasets that best match the query.
+        The final score is a weighted sum of cosine similarity, normalized likes, and normalized downloads.
         """
         if not self.ds or self.description_vectors is None:
             print("No datasets available to search.")
@@ -94,7 +98,7 @@ class HFDataSearch:
         top_indices = [int(i) for i in top_indices]
         top_datasets = [self.ds[i] for i in top_indices]
 
-        # Use helper method to collect split info
+        # Retrieve test/train split information via helper method.
         test_info, train_info = self._collect_ds_split_info(top_indices)
         for i, ds_item in enumerate(top_datasets):
             ds_item["has_test_set"] = test_info[top_indices[i]]["has"]
@@ -107,8 +111,9 @@ class HFDataSearch:
 
     def _collect_ds_split_info(self, indices):
         """
-        Helper function that collects test/train split info for given dataset indices.
-        Returns two dictionaries (test_info, train_info) keyed by dataset index.
+        Helper function to collect test and train split information for datasets.
+        :param indices: List of dataset indices to process.
+        :return: Two dictionaries: test_info and train_info, keyed by dataset index.
         """
         test_info = {}
         train_info = {}
@@ -144,31 +149,16 @@ class HFDataSearch:
                 train_info[i] = {"has": False, "download_size": None, "element_size": None}
         return test_info, train_info
 
-    def results_str(self, results):
-        """
-        Format the dataset search results into human-readable strings.
-        """
-        result_strs = []
-        for result in results:
-            res_str = f"Dataset ID: {result['id']}\n"
-            res_str += f"Description: {result['description']}\n"
-            res_str += f"Likes: {result['likes']}\n"
-            res_str += f"Downloads: {result['downloads']}\n"
-            res_str += f"Has Testing Set: {result['has_test_set']}\n"
-            res_str += f"Has Training Set: {result['has_train_set']}\n"
-            res_str += f"Test Download Size: {result['test_download_size']}\n"
-            res_str += f"Test Dataset Size: {result['test_element_size']}\n"
-            res_str += f"Train Download Size: {result['train_download_size']}\n"
-            res_str += f"Train Dataset Size: {result['train_element_size']}\n"
-            result_strs.append(res_str)
-        return result_strs
-
 
 class SemanticScholarSearch:
     def __init__(self):
         self.sch_engine = SemanticScholar(retry=False)
 
     def find_papers_by_str(self, query, N=10):
+        """
+        Search Semantic Scholar for papers matching the query.
+        Returns a list of formatted paper summaries.
+        """
         paper_sums = []
         results = self.sch_engine.search_paper(query, limit=N, min_citation_count=3, open_access_pdf=True)
         for _i in range(len(results)):
@@ -190,7 +180,9 @@ class ArxivSearch:
         self.arxiv_client = arxiv.Client()
 
     def _process_query(self, query: str) -> str:
-        """Truncate the query to MAX_QUERY_LENGTH characters while preserving whole words."""
+        """
+        Truncate the query to ensure it does not exceed the maximum length.
+        """
         MAX_QUERY_LENGTH = 300
         if len(query) <= MAX_QUERY_LENGTH:
             return query
@@ -206,6 +198,10 @@ class ArxivSearch:
         return ' '.join(processed_query)
 
     def find_papers_by_str(self, query, N=20):
+        """
+        Search arXiv for papers matching the query.
+        Returns a concatenated string of paper summaries.
+        """
         import arxiv
         processed_query = self._process_query(query)
         max_retries = 3
@@ -237,6 +233,9 @@ class ArxivSearch:
         return None
 
     def retrieve_full_paper_text(self, query):
+        """
+        Download the PDF for a given arXiv paper and extract its text.
+        """
         import arxiv
         pdf_text = ""
         paper = next(arxiv.Client().results(arxiv.Search(id_list=[query])))
@@ -257,7 +256,7 @@ class ArxivSearch:
 
 def execute_code(code_str, timeout=60, MAX_LEN=1000):
     """
-    Execute Python code in a restricted environment with a timeout.
+    Execute Python code in a restricted environment with a timeout and capture the output.
     """
     if "load_dataset('pubmed" in code_str:
         return "[CODE EXECUTION ERROR] pubmed Download took way too long. Program terminated"
