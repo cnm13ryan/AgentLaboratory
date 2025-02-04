@@ -248,6 +248,8 @@ class BaseAgent:
         self.max_hist_len = 15
 
     def set_model_backbone(self, model):
+        if not model:
+            raise ValueError("model cannot be empty.")
         self.model = model
 
     @staticmethod
