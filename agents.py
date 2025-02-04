@@ -271,35 +271,63 @@ class BaseAgent:
             return "Step cannot be negative."
 
         # Build system prompt
-        sys_prompt = f"""You are {self.role_description()} \nTask instructions: {self.phase_prompt(phase)}\n{self.command_descriptions(phase)}"""#\n{self.example_command(phase)}
+        sys_prompt = f"You are {self.role_description()} \nTask instructions: {self.phase_prompt(phase)}\n{self.command_descriptions(phase)}"
+
+        # Build context and history strings
         context = self.context(phase)
-        history_str = "\n".join([_[1] for _ in self.history])
-        phase_notes = [_note for _note in self.notes if phase in _note["phases"]]
-        notes_str = f"Notes for the task objective: {phase_notes}\n" if len(phase_notes) > 0 else ""
-        complete_str = str()
-        if step/(self.max_steps-1) > 0.7: complete_str = "You must finish this task and submit as soon as possible!"
+        history_str = "\n".join([h[1] for h in self.history])
+        phase_notes = [note for note in self.notes if phase in note.get("phases", [])]
+        notes_str = f"Notes for the task objective: {phase_notes}\n" if phase_notes else ""
+
+        # Check if nearing final steps to enforce completion urgency
+        complete_str = ""
+        if step / (self.max_steps - 1) > 0.7:
+            complete_str = "You must finish this task and submit as soon as possible!"
+
+        # Assemble full prompt for LLM query
         prompt = (
-            f"""{context}\n{'~' * 10}\nHistory: {history_str}\n{'~' * 10}\n"""
+            f"{context}\n{'~' * 10}\nHistory: {history_str}\n{'~' * 10}\n"
             f"Current Step #{step}, Phase: {phase}\n{complete_str}\n"
             f"[Objective] Your goal is to perform research on the following topic: {research_topic}\n"
-            f"Feedback: {feedback}\nNotes: {notes_str}\nYour previous command was: {self.prev_comm}. Make sure your new output is very different.\nPlease produce a single command below:\n")
-        model_resp = query_model(model_str=self.model, system_prompt=sys_prompt, prompt=prompt, temp=temp, openai_api_key=self.openai_api_key)
-        print("^"*50, phase, "^"*50)
+            f"Feedback: {feedback}\nNotes: {notes_str}\n"
+            f"Your previous command was: {self.prev_comm}.\nPlease produce a single command below:\n"
+        )
+
+        # Query the model
+        model_resp = query_model(
+            model_str=self.model,
+            system_prompt=sys_prompt,
+            prompt=prompt,
+            temp=temp,
+            openai_api_key=self.openai_api_key
+        )
+
+        # Clean and store the response
         model_resp = self.clean_text(model_resp)
         self.prev_comm = model_resp
+
+        # Handle expiration in feedback if present
         steps_exp = None
-        if feedback is not None and "```EXPIRATION" in feedback:
-            steps_exp = int(feedback.split("\n")[0].replace("```EXPIRATION ", ""))
-            feedback = extract_prompt(feedback, "EXPIRATION")
+        if feedback and "```EXPIRATION" in feedback:
+            try:
+                steps_exp = int(feedback.split("\n")[0].replace("```EXPIRATION ", ""))
+                feedback = extract_prompt(feedback, "EXPIRATION")
+            except ValueError:
+                pass
+
+        # Append the current step to history and manage expiration
         self.history.append((steps_exp, f"Step #{step}, Phase: {phase}, Feedback: {feedback}, Your response: {model_resp}"))
-        # remove histories that have expiration dates
-        for _i in reversed(range(len(self.history))):
-            if self.history[_i][0] is not None:
-                self.history[_i] = (self.history[_i][0] - 1, self.history[_i][1])
-                if self.history[_i][0] < 0:
-                    self.history.pop(_i)
+        for i in reversed(range(len(self.history))):
+            if self.history[i][0] is not None:
+                new_exp = self.history[i][0] - 1
+                self.history[i] = (new_exp, self.history[i][1])
+                if new_exp < 0:
+                    self.history.pop(i)
+        
+        # Limit history length
         if len(self.history) >= self.max_hist_len:
             self.history.pop(0)
+
         return model_resp
 
     def reset(self):
