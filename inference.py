@@ -92,6 +92,12 @@ def openai_create_chat_completion(model, messages, version="1.5", temp=None):
                 temperature=temp
             )
 
+def extract_answer_from_openai(completion):
+    return completion.choices[0].message.content
+
+def extract_answer_from_anthropic(message):
+    return json.loads(message.to_json())["content"][0]["text"]
+
 def query_model(model_str, prompt, system_prompt, openai_api_key=None, anthropic_api_key=None, tries=5, timeout=5.0, temp=None, print_cost=True, version="1.5"):
     model_str = MODEL_ALIASES.get(model_str, model_str)
     if model_str not in VALID_MODELS:
@@ -115,7 +121,7 @@ def query_model(model_str, prompt, system_prompt, openai_api_key=None, anthropic
                     completion = openai_create_chat_completion(model_str, messages, version=version, temp=temp)
                 else:
                     completion = openai_create_chat_completion("gpt-4o-mini-2024-07-18", messages, version=version, temp=temp)
-                answer = completion.choices[0].message.content
+                answer = extract_answer_from_openai(completion)
             elif model_str == "claude-3-5-sonnet":
                 client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
                 message = client.messages.create(
@@ -123,14 +129,14 @@ def query_model(model_str, prompt, system_prompt, openai_api_key=None, anthropic
                     system=system_prompt,
                     messages=[{"role": "user", "content": prompt}]
                 )
-                answer = json.loads(message.to_json())["content"][0]["text"]
+                answer = extract_answer_from_anthropic(message)
             elif model_str == "gpt-4o":
                 messages = build_messages(system_prompt, prompt)
                 if version == "0.28":
                     completion = openai_create_chat_completion(model_str, messages, version=version, temp=temp)
                 else:
                     completion = openai_create_chat_completion("gpt-4o-2024-08-06", messages, version=version, temp=temp)
-                answer = completion.choices[0].message.content
+                answer = extract_answer_from_openai(completion)
             elif model_str == "deepseek-chat":
                 messages = build_messages(system_prompt, prompt)
                 if version == "0.28":
@@ -149,28 +155,28 @@ def query_model(model_str, prompt, system_prompt, openai_api_key=None, anthropic
                             model="deepseek-chat",
                             messages=messages,
                             temperature=temp)
-                answer = completion.choices[0].message.content
+                answer = extract_answer_from_openai(completion)
             elif model_str == "o1-mini":
                 messages = build_messages(system_prompt, prompt, single_user_msg=True)
                 if version == "0.28":
                     completion = openai_create_chat_completion(model_str, messages, version=version, temp=temp)
                 else:
                     completion = openai_create_chat_completion("o1-mini-2024-09-12", messages, version=version, temp=temp)
-                answer = completion.choices[0].message.content
+                answer = extract_answer_from_openai(completion)
             elif model_str == "o1":
                 messages = build_messages(system_prompt, prompt, single_user_msg=True)
                 if version == "0.28":
                     completion = openai_create_chat_completion("o1-2024-12-17", messages, version=version, temp=temp)
                 else:
                     completion = openai_create_chat_completion("o1-2024-12-17", messages, version=version, temp=temp)
-                answer = completion.choices[0].message.content
+                answer = extract_answer_from_openai(completion)
             elif model_str == "o1-preview":
                 messages = build_messages(system_prompt, prompt, single_user_msg=True)
                 if version == "0.28":
                     completion = openai_create_chat_completion(model_str, messages, version=version, temp=temp)
                 else:
                     completion = openai_create_chat_completion("o1-preview", messages, version=version, temp=temp)
-                answer = completion.choices[0].message.content
+                answer = extract_answer_from_openai(completion)
 
             try:
                 if model_str in ["o1-preview", "o1-mini", "claude-3-5-sonnet", "o1"]:
