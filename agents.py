@@ -4,6 +4,10 @@ from inference import *
 
 
 def extract_json_between_markers(llm_output):
+    # Guard clause for empty output:
+    if not llm_output:
+        return None
+
     # Regular expression pattern to find JSON content between ```json and ```
     json_pattern = r"```json(.*?)```"
     matches = re.findall(json_pattern, llm_output, re.DOTALL)
