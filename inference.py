@@ -3,6 +3,25 @@ from openai import OpenAI
 import openai
 import os, anthropic, json
 
+MODEL_ALIASES = {
+    "gpt-4o-mini": "gpt-4o-mini",
+    "gpt4omini": "gpt-4o-mini",
+    "gpt-4omini": "gpt-4o-mini",
+    "gpt4o-mini": "gpt-4o-mini",
+    "gpt-4o": "gpt-4o",
+    "gpt4o": "gpt-4o",
+    "claude-3.5-sonnet": "claude-3-5-sonnet",
+}
+VALID_MODELS = {
+    "gpt-4o-mini",
+    "gpt-4o",
+    "o1-preview",
+    "o1-mini",
+    "claude-3-5-sonnet",
+    "deepseek-chat",
+    "o1",
+}
+
 TOKENS_IN = dict()
 TOKENS_OUT = dict()
 
@@ -30,6 +49,11 @@ def curr_cost_est():
     return sum([costmap_in[_]*TOKENS_IN[_] for _ in TOKENS_IN]) + sum([costmap_out[_]*TOKENS_OUT[_] for _ in TOKENS_OUT])
 
 def query_model(model_str, prompt, system_prompt, openai_api_key=None, anthropic_api_key=None, tries=5, timeout=5.0, temp=None, print_cost=True, version="1.5"):
+
+    model_str = MODEL_ALIASES.get(model_str, model_str)
+    if model_str not in VALID_MODELS:
+        raise ValueError(f"Unsupported model name or alias: {model_str}")
+
     preloaded_api = os.getenv('OPENAI_API_KEY')
     if openai_api_key is None and preloaded_api is not None:
         openai_api_key = preloaded_api
@@ -42,8 +66,8 @@ def query_model(model_str, prompt, system_prompt, openai_api_key=None, anthropic
         os.environ["ANTHROPIC_API_KEY"] = anthropic_api_key
     for _ in range(tries):
         try:
-            if model_str == "gpt-4o-mini" or model_str == "gpt4omini" or model_str == "gpt-4omini" or model_str == "gpt4o-mini":
-                model_str = "gpt-4o-mini"
+            if model_str == "gpt-4o-mini":
+                # gpt-4o-mini branch remains similar but now using the canonical name
                 messages = [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}]
