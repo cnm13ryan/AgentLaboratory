@@ -25,10 +25,9 @@ def suppress_stdout():
 
 os.environ["JOBLIB_VERBOSITY"] = "0"
 logging.basicConfig(level=logging.WARNING)
+logging.getLogger('sklearn.model_selection').setLevel(logging.WARNING)
 warnings.filterwarnings("ignore")
 warnings.simplefilter(action='ignore', category=FutureWarning)
-import logging
-logging.getLogger('sklearn.model_selection').setLevel(logging.WARNING)
 
 
 GLOBAL_REPAIR_ATTEMPTS = 2
