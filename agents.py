@@ -261,6 +261,19 @@ class BaseAgent:
         text = text.replace("```\n", "```")
         return text
 
+    def build_system_prompt(self, phase):
+        """
+        Helper that composes the system prompt from:
+          1) role description
+          2) phase prompt
+          3) command descriptions
+        """
+        return (
+            f"You are {self.role_description()}.\n"
+            f"Task instructions: {self.phase_prompt(phase)}\n"
+            f"{self.command_descriptions(phase)}"
+        )
+
     def inference(self, research_topic, phase, step, feedback="", temp=None):
         # Guard clauses:
         if not research_topic:
@@ -271,7 +284,7 @@ class BaseAgent:
             return "Step cannot be negative."
 
         # Build system prompt
-        sys_prompt = f"You are {self.role_description()} \nTask instructions: {self.phase_prompt(phase)}\n{self.command_descriptions(phase)}"
+        sys_prompt = self.build_system_prompt(phase)
 
         # Build context and history strings
         context = self.context(phase)
