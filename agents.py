@@ -262,6 +262,15 @@ class BaseAgent:
         return text
 
     def inference(self, research_topic, phase, step, feedback="", temp=None):
+        # Guard clauses:
+        if not research_topic:
+            return "No research topic provided."
+        if not phase:
+            return "No phase provided."
+        if step < 0:
+            return "Step cannot be negative."
+
+        # Build system prompt
         sys_prompt = f"""You are {self.role_description()} \nTask instructions: {self.phase_prompt(phase)}\n{self.command_descriptions(phase)}"""#\n{self.example_command(phase)}
         context = self.context(phase)
         history_str = "\n".join([_[1] for _ in self.history])
