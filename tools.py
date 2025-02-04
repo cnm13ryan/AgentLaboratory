@@ -173,9 +173,6 @@ class SemanticScholarSearch:
             paper_sums.append(paper_sum)
         return paper_sums
 
-    def retrieve_full_paper_text(self, query):
-        pass
-
 
 class ArxivSearch:
     def __init__(self):
