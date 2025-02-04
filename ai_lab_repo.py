@@ -511,89 +511,19 @@ class LaboratoryWorkflow:
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="AgentLaboratory Research Workflow")
-
-    parser.add_argument(
-        '--copilot-mode',
-        type=str,
-        default="False",
-        help='Enable human interaction mode.'
-    )
-
-    parser.add_argument(
-        '--deepseek-api-key',
-        type=str,
-        help='Provide the DeepSeek API key.'
-    )
-
-    parser.add_argument(
-        '--load-existing',
-        type=str,
-        default="False",
-        help='Do not load existing state; start a new workflow.'
-    )
-
-    parser.add_argument(
-        '--load-existing-path',
-        type=str,
-        help='Path to load existing state; start a new workflow, e.g. state_saves/results_interpretation.pkl'
-    )
-
-    parser.add_argument(
-        '--research-topic',
-        type=str,
-        help='Specify the research topic.'
-    )
-
-    parser.add_argument(
-        '--api-key',
-        type=str,
-        help='Provide the OpenAI API key.'
-    )
-
-    parser.add_argument(
-        '--compile-latex',
-        type=str,
-        default="True",
-        help='Compile latex into pdf during paper writing phase. Disable if you can not install pdflatex.'
-    )
-
-    parser.add_argument(
-        '--llm-backend',
-        type=str,
-        default="o1-mini",
-        help='Backend LLM to use for agents in Agent Laboratory.'
-    )
-
-    parser.add_argument(
-        '--language',
-        type=str,
-        default="English",
-        help='Language to operate Agent Laboratory in.'
-    )
-
-    parser.add_argument(
-        '--num-papers-lit-review',
-        type=str,
-        default="5",
-        help='Total number of papers to summarize in literature review stage'
-    )
-
-    parser.add_argument(
-        '--mlesolver-max-steps',
-        type=str,
-        default="3",
-        help='Total number of mle-solver steps'
-    )
-
-    parser.add_argument(
-        '--papersolver-max-steps',
-        type=str,
-        default="5",
-        help='Total number of paper-solver steps'
-    )
-
+    parser.add_argument('--copilot-mode', type=str, default="False", help='Enable human interaction mode.')
+    parser.add_argument('--deepseek-api-key', type=str, help='Provide the DeepSeek API key.')
+    parser.add_argument('--load-existing', type=str, default="False", help='Load existing state if True; otherwise start a new workflow.')
+    parser.add_argument('--load-existing-path', type=str, help='Path to load existing state, e.g. state_saves/results_interpretation.pkl')
+    parser.add_argument('--research-topic', type=str, help='Specify the research topic.')
+    parser.add_argument('--api-key', type=str, help='Provide the OpenAI API key.')
+    parser.add_argument('--compile-latex', type=str, default="True", help='Compile latex into pdf during paper writing phase.')
+    parser.add_argument('--llm-backend', type=str, default="o1-mini", help='Backend LLM to use for agents in Agent Laboratory.')
+    parser.add_argument('--language', type=str, default="English", help='Language to operate in.')
+    parser.add_argument('--num-papers-lit-review', type=str, default="5", help='Number of papers to summarize in the literature review stage.')
+    parser.add_argument('--mlesolver-max-steps', type=str, default="3", help='Total number of MLESolver steps.')
+    parser.add_argument('--papersolver-max-steps', type=str, default="5", help='Total number of PaperSolver steps.')
     return parser.parse_args()
-
 
 if __name__ == "__main__":
     args = parse_arguments()
@@ -602,6 +532,7 @@ if __name__ == "__main__":
     human_mode = args.copilot_mode.lower() == "true"
     compile_pdf = args.compile_latex.lower() == "true"
     load_existing = args.load_existing.lower() == "true"
+
     try:
         num_papers_lit_review = int(args.num_papers_lit_review.lower())
     except Exception:
@@ -617,6 +548,7 @@ if __name__ == "__main__":
 
     api_key = os.getenv('OPENAI_API_KEY') or args.api_key
     deepseek_api_key = os.getenv('DEEPSEEK_API_KEY') or args.deepseek_api_key
+
     if args.api_key is not None and os.getenv('OPENAI_API_KEY') is None:
         os.environ["OPENAI_API_KEY"] = args.api_key
     if args.deepseek_api_key is not None and os.getenv('DEEPSEEK_API_KEY') is None:
